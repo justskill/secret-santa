@@ -1,0 +1,25 @@
+# Run by deploy.sh. Your settings are in .env.
+#
+# These names are fixed on purpose. Compose would otherwise name the data volume after this folder,
+# so unzipping an update somewhere else would quietly start from an empty database.
+name: secret-santa
+
+services:
+  secret-santa:
+    image: secret-santa:current
+    pull_policy: never
+    container_name: secret-santa
+    restart: unless-stopped
+    ports:
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-3000}:3000"
+    environment:
+      ORIGIN: ${ORIGIN:?Set ORIGIN in .env to the address family members will use}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEMO_MODE: ${DEMO_MODE:-}
+      SANTA_SECRET: ${SANTA_SECRET:-}
+    volumes:
+      - santa-data:/data
+
+volumes:
+  santa-data:
+    name: secret-santa-data

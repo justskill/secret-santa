@@ -1,0 +1,2 @@
+# A shell script with Windows line endings won't run on the server.
+* text=auto eol=lf
