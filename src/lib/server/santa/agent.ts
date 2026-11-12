@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BetaContentBlockParam, BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import { logAudit, type SantaBlockReason } from '../audit';
 import { seal, unseal } from '../crypto';
 import { db } from '../db';
 import type { Person } from '../people';
@@ -150,20 +151,42 @@ export function buildHistory(seasonId: number, personId: number): BetaMessagePar
 	return messages;
 }
 
-function restingMessage(profile: Person): string | null {
+/** Why a message can't go to the model right now, and what Santa says instead. */
+function restingMessage(profile: Person): { reason: SantaBlockReason; text: string } | null {
+	const name = firstNameOf(profile.display_name);
 	if (getSetting('santa_enabled') !== '1') {
-		return `Ho ho ho! I've stepped out to feed the reindeer, ${firstNameOf(profile.display_name)}. Your list, your person's list, and North Pole Mail all still work from the menu.`;
+		return {
+			reason: 'disabled',
+			text: `Ho ho ho! I've stepped out to feed the reindeer, ${name}. Your list, your person's list, and North Pole Mail all still work from the menu.`
+		};
 	}
 	if (overBudget()) {
-		return `Ho ho ho! The elves say I've chatted through my whole allowance this season, ${firstNameOf(profile.display_name)}. Everything else still works from the menu. Your organizer can top me up.`;
+		return {
+			reason: 'budget',
+			text: `Ho ho ho! The elves say I've chatted through my whole allowance this season, ${name}. Everything else still works from the menu. Your organizer can top me up.`
+		};
 	}
 	if (!aiAvailable()) {
-		return `Ho ho ho! My workshop line isn't connected yet, ${firstNameOf(profile.display_name)}. Everything else still works from the menu.`;
+		return {
+			reason: 'unavailable',
+			text: `Ho ho ho! My workshop line isn't connected yet, ${name}. Everything else still works from the menu.`
+		};
 	}
 	if (dailyCapReached(profile.id)) {
-		return `Ho ho ho! You've kept me busy today, ${firstNameOf(profile.display_name)}! Even Santa needs a cocoa break. Let's pick this up tomorrow. Your list and your person's list still work from the menu.`;
+		return {
+			reason: 'daily_cap',
+			text: `Ho ho ho! You've kept me busy today, ${name}! Even Santa needs a cocoa break. Let's pick this up tomorrow. Your list and your person's list still work from the menu.`
+		};
 	}
 	return null;
+}
+
+/** A short code for why a chat failed, for counting. It never includes the error's own text. */
+function failureKind(err: unknown): string {
+	if (err instanceof Anthropic.APIConnectionTimeoutError) return 'timeout';
+	if (err instanceof Anthropic.APIConnectionError) return 'connection';
+	if (err instanceof Anthropic.APIError) return typeof err.status === 'number' ? `api_${err.status}` : 'api_error';
+	return 'other';
 }
 
 function statusForBlock(name: string): string {
@@ -213,6 +236,7 @@ export async function runSantaTurn(
 	signal?: AbortSignal
 ): Promise<void> {
 	if (SANTA_BUSY.has(profile.id)) {
+		logAudit(actor.id, 'santa.blocked', 'busy' satisfies SantaBlockReason);
 		emit({ type: 'error', text: 'Santa is still answering your last message. Give him a moment.' });
 		return;
 	}
@@ -220,6 +244,7 @@ export async function runSantaTurn(
 	const cardIds: string[] = [];
 	let reply = '';
 	let replyTurn: number | null = null;
+	let badToolInput = false;
 
 	/**
 	 * Saved as soon as a card exists, and again as the reply grows. A person can see a card before
@@ -240,7 +265,8 @@ export async function runSantaTurn(
 		const resting = restingMessage(profile);
 		const client = anthropic();
 		if (resting || !client) {
-			const message = resting ?? 'My workshop line is down at the moment.';
+			const message = resting?.text ?? 'My workshop line is down at the moment.';
+			logAudit(actor.id, 'santa.blocked', resting?.reason ?? ('unavailable' satisfies SantaBlockReason));
 			saveTurn(season.id, profile.id, actor.id, 'assistant', message);
 			emit({ type: 'text', text: message });
 			emit({ type: 'done' });
@@ -313,12 +339,18 @@ export async function runSantaTurn(
 				jsonRetries = 0;
 			} catch (err) {
 				// A tool input that could not be parsed at all is worth one more try. API errors are not.
-				if (err instanceof Anthropic.APIError || signal?.aborted || jsonRetries++ >= 2) throw err;
+				if (err instanceof Anthropic.APIError || signal?.aborted) throw err;
+				if (jsonRetries++ >= 2) {
+					badToolInput = true;
+					throw err;
+				}
 				withdrawRound();
 				continue;
 			}
 
-			recordUsage(actor.id, 'chat', message.model ?? model, message.usage);
+			// The last round still asking for tools is the one that runs out, so it's counted as that.
+			const exhausted = round === MAX_TOOL_ROUNDS - 1 && message.stop_reason === 'tool_use';
+			recordUsage(actor.id, 'chat', message.model ?? model, message.usage, exhausted ? 'tool_rounds_exhausted' : message.stop_reason);
 
 			if (message.stop_reason === 'refusal') {
 				// Text from a declined response is withdrawn, not kept.
@@ -370,6 +402,7 @@ export async function runSantaTurn(
 		if (reply.trim() || cardIds.length) saveReply();
 		if (signal?.aborted) return;
 		console.error('Santa chat failed:', err instanceof Error ? err.message : err);
+		logAudit(actor.id, 'santa.failed', badToolInput ? 'bad_tool_input' : failureKind(err));
 		const text = "Santa's sleigh hit some turbulence and he didn't catch that. Please try again in a moment.";
 		saveTurn(season.id, profile.id, actor.id, 'event', 'A message failed to send because of a connection problem.');
 		emit({ type: 'error', text });

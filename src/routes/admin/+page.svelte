@@ -6,6 +6,27 @@
 
 	const usd = (value: number) => `$${value.toFixed(value < 1 ? 3 : 2)}`;
 	const spendPercent = $derived(Math.min(100, (data.spend.total / Math.max(data.spend.budget, 0.01)) * 100));
+
+	const BLOCKED_LABELS: Record<string, string> = {
+		daily_cap: 'held back by the daily limit',
+		budget: 'held back by the budget',
+		disabled: 'sent while Santa was switched off',
+		unavailable: 'sent with no connection to Anthropic',
+		busy: 'sent while Santa was still answering'
+	};
+
+	/** Totals only, with no names: how often Santa came up short this season. */
+	const outcomeLine = $derived.by(() => {
+		const { declined, cutOff, tangled, blocked, failed } = data.outcomes;
+		const parts = [
+			declined ? `${declined} declined` : '',
+			cutOff ? `${cutOff} cut off` : '',
+			tangled ? `${tangled} ran out of steps` : '',
+			...blocked.map((row) => `${row.count} ${BLOCKED_LABELS[row.reason] ?? 'held back'}`),
+			failed ? `${failed} failed` : ''
+		].filter(Boolean);
+		return parts.length ? `This season: ${parts.join(', ')}.` : '';
+	});
 </script>
 
 <main class="page stack">
@@ -102,6 +123,9 @@
 						Estimate from list prices. {data.spend.calls} calls, {data.spend.searches} web searches.
 						<a href="/admin/settings">Change the budget</a>
 					</p>
+					{#if outcomeLine}
+						<p class="small muted-ink" data-testid="santa-outcomes">{outcomeLine}</p>
+					{/if}
 				</section>
 
 				{#if data.nextReminder}

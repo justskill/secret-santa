@@ -77,11 +77,17 @@ export function estimateCost(model: string, usage: UsageLike): number {
 	);
 }
 
-export function recordUsage(personId: number | null, purpose: string, model: string, usage: UsageLike): void {
+/**
+ * Why a model call stopped: the API's own stop_reason (such as "end_turn", "refusal", "max_tokens"
+ * or "pause_turn"), or "tool_rounds_exhausted" when a chat used up its tool rounds.
+ */
+export type StopReason = string | null | undefined;
+
+export function recordUsage(personId: number | null, purpose: string, model: string, usage: UsageLike, stopReason: StopReason): void {
 	db()
 		.prepare(
-			`INSERT INTO ai_usage (person_id, purpose, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, web_searches, cost_usd)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			`INSERT INTO ai_usage (person_id, purpose, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, web_searches, cost_usd, stop_reason)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
 		.run(
 			personId,
@@ -92,7 +98,8 @@ export function recordUsage(personId: number | null, purpose: string, model: str
 			usage.cache_read_input_tokens ?? 0,
 			usage.cache_creation_input_tokens ?? 0,
 			usage.server_tool_use?.web_search_requests ?? 0,
-			estimateCost(model, usage)
+			estimateCost(model, usage),
+			stopReason ?? null
 		);
 }
 
@@ -139,6 +146,42 @@ export function spendSummary(): SpendSummary {
 			.prepare('SELECT model, COUNT(*) AS calls, SUM(cost_usd) AS cost FROM ai_usage WHERE at >= ? GROUP BY model ORDER BY cost DESC')
 			.all(since) as SpendSummary['byModel']
 	};
+}
+
+/** This season's totals of the ways Santa can come up short. Counts only, with no names. */
+export interface SantaOutcomes {
+	/** Calls of any kind that the model declined. */
+	declined: number;
+	/** Calls cut off at their length limit. */
+	cutOff: number;
+	/** Chat messages that used up every tool round. */
+	tangled: number;
+	/** Chat messages that never reached the model, by reason. */
+	blocked: { reason: string; count: number }[];
+	/** Chat messages that failed with an error. */
+	failed: number;
+}
+
+export function santaOutcomes(): SantaOutcomes {
+	const since = spendSince();
+	const stops = db()
+		.prepare(
+			`SELECT COALESCE(SUM(stop_reason = 'refusal'), 0) AS declined,
+			 COALESCE(SUM(stop_reason = 'max_tokens'), 0) AS cutOff,
+			 COALESCE(SUM(stop_reason = 'tool_rounds_exhausted'), 0) AS tangled
+			 FROM ai_usage WHERE at >= ?`
+		)
+		.get(since) as { declined: number; cutOff: number; tangled: number };
+	const blocked = db()
+		.prepare(
+			`SELECT detail AS reason, COUNT(*) AS count FROM audit_log
+			 WHERE action = 'santa.blocked' AND at >= ? GROUP BY detail ORDER BY count DESC`
+		)
+		.all(since) as SantaOutcomes['blocked'];
+	const failed = (
+		db().prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'santa.failed' AND at >= ?`).get(since) as { n: number }
+	).n;
+	return { ...stops, blocked, failed };
 }
 
 export function overBudget(): boolean {

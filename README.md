@@ -78,6 +78,15 @@ Everything lives in the `secret-santa-data` Docker volume, which updates don't t
 
 Names, wish lists, and chats with Santa are sent to Anthropic's API to generate his replies. The app doesn't collect addresses, birthdays, or payment details.
 
+For a look back after the season, the app also keeps counts:
+- **Santa's calls:** why each one stopped (a refusal, a cut-off, or running out of steps).
+- **Chats:** how many were turned away and why (Santa switched off, the budget, no key, the daily limit, or Santa still answering), and how many failed.
+- **Text:** how many chat messages and pasted lists were too long and got cut.
+- **Sign-ins:** successful and failed sign-ins, and lockouts.
+- **Activity:** which weeks each person used the app.
+
+These counts hold only reason codes and numbers. They never hold anything someone typed, the name typed at sign-in, or an IP address. Failed sign-ins and lockouts stop being counted after 200 a day, so a bot can't fill the database. The admin dashboard shows only totals.
+
 ## How the secrets are kept
 
 - **Santa can't leak what he can't see.** Each of his tools acts only on the signed-in profile, and no tool can look up who drew someone. So no clever prompt can get the answer out of him.

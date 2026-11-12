@@ -314,6 +314,18 @@ const MIGRATIONS: string[] = [
 	`
 	ALTER TABLE thread_messages ADD COLUMN family_ping_done INTEGER NOT NULL DEFAULT 0;
 	UPDATE thread_messages SET family_ping_done = 1 WHERE delivered_at IS NOT NULL;
+	`,
+	// Usage numbers for after the season. Why each model call stopped (a refusal, a cut-off, and so
+	// on), and which weeks each person used the app at all. Weeks hold no time of day on purpose: an
+	// exact time next to a name could point at who sent an anonymous question.
+	`
+	ALTER TABLE ai_usage ADD COLUMN stop_reason TEXT;
+
+	CREATE TABLE activity_weeks (
+		person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+		week TEXT NOT NULL,
+		PRIMARY KEY (person_id, week)
+	) WITHOUT ROWID;
 	`
 ];
 

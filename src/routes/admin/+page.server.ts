@@ -6,7 +6,7 @@ import { peopleWithNoGift } from '$lib/server/gifts';
 import { ntfyConfigured } from '$lib/server/ntfy';
 import { getPerson, guardiansOf, listPeople } from '$lib/server/people';
 import { listReminders } from '$lib/server/reminders';
-import { aiAvailable, spendSummary } from '$lib/server/santa/client';
+import { aiAvailable, santaOutcomes, spendSummary } from '$lib/server/santa/client';
 import { anthropicKey } from '$lib/server/env';
 import { currentSeason, participantIds } from '$lib/server/season';
 import { peopleWithoutApprovers } from '$lib/server/threads';
@@ -21,9 +21,10 @@ export const load: PageServerLoad = () => {
 	const people = listPeople();
 	const adults = people.filter((person) => person.kind === 'adult');
 	const spend = spendSummary();
+	const outcomes = santaOutcomes();
 
 	if (!season) {
-		return { hasSeason: false as const, spend, keySet: !!anthropicKey(), aiOn: aiAvailable(), audit: recentAudit(12) };
+		return { hasSeason: false as const, spend, outcomes, keySet: !!anthropicKey(), aiOn: aiAvailable(), audit: recentAudit(12) };
 	}
 
 	const participants = participantIds(season.id);
@@ -101,6 +102,7 @@ export const load: PageServerLoad = () => {
 		readyReminders: reminders.filter((r) => r.status === 'ready').map((r) => ({ id: r.id, title: r.title })),
 		nextReminder: reminders.find((r) => r.status === 'scheduled') ?? null,
 		spend,
+		outcomes,
 		keySet: !!anthropicKey(),
 		aiOn: aiAvailable(),
 		audit: recentAudit(12)

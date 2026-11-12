@@ -1,4 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { COUNTED_EVENTS } from '$lib/server/audit';
+import { clearThrottleForTests } from '$lib/server/auth';
 import { unseal } from '$lib/server/crypto';
 import { db } from '$lib/server/db';
 import {
@@ -31,6 +33,8 @@ import {
 	RelayError
 } from '$lib/server/threads';
 import { addItem, canViewList, setGuidance } from '$lib/server/wishlist';
+import { POST as chatPost } from '../../src/routes/api/santa/chat/+server';
+import { actions as loginActions } from '../../src/routes/login/+page.server';
 
 let season: Season;
 let people: Record<string, Person>;
@@ -357,6 +361,54 @@ describe('gift tracking', () => {
 		for (const row of rows) {
 			expect(Object.keys(row)).not.toContain('giver_id');
 			expect(typeof row.giver_tag).toBe('string');
+		}
+	});
+});
+
+describe('usage counts', () => {
+	it('hold only reason codes and numbers, never what anyone typed', async () => {
+		const secret = 'Psst the blue bike is for Ivy';
+
+		// Long enough to be cut, and Santa has no key here, so it's turned away as well.
+		const response = (await chatPost({
+			request: new Request('http://test/api/santa/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message: `${secret}. `.repeat(100) })
+			}),
+			locals: { viewer: { account: people.morgan, profile: people.morgan, wards: [], isAdmin: false }, sessionToken: null }
+		} as never)) as Response;
+		await response.text();
+
+		// A name typed at sign-in can be a misspelled real name, so failures and lockouts carry none.
+		clearThrottleForTests();
+		for (let i = 0; i < 9; i++) {
+			const form = new FormData();
+			form.set('username', secret);
+			form.set('password', 'not the password');
+			await loginActions.default!({
+				request: new Request('https://santa.test/login', { method: 'POST', body: form }),
+				cookies: { set: () => undefined },
+				url: new URL('https://santa.test/login'),
+				getClientAddress: () => '198.51.100.23'
+			} as never);
+		}
+		clearThrottleForTests();
+
+		const counted = db()
+			.prepare(`SELECT actor_id, action, detail FROM audit_log WHERE action IN (${COUNTED_EVENTS.map(() => '?').join(', ')})`)
+			.all(...COUNTED_EVENTS) as { actor_id: number | null; action: string; detail: string }[];
+		expect(new Set(counted.map((row) => row.action))).toEqual(
+			new Set(['santa.truncated', 'santa.blocked', 'login.failed', 'login.throttled'])
+		);
+		for (const row of counted) {
+			expect(row.detail).toMatch(/^[a-z0-9_]*$/);
+			if (row.action.startsWith('login.')) expect(row.actor_id).toBeNull();
+		}
+		for (const table of ['audit_log', 'ai_usage', 'activity_weeks']) {
+			const dump = JSON.stringify(db().prepare(`SELECT * FROM ${table}`).all());
+			expect(dump).not.toContain('Psst');
+			expect(dump).not.toContain('198.51.100.23');
 		}
 	});
 });

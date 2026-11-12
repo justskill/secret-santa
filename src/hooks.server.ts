@@ -1,5 +1,6 @@
 import { error, redirect, type Handle, type HandleServerError, type ServerInit } from '@sveltejs/kit';
 import { buildViewer } from '$lib/server/access';
+import { noteActive } from '$lib/server/activity';
 import { getSetupToken, readSession, SESSION_COOKIE } from '$lib/server/auth';
 import { seedDemoIfEmpty } from '$lib/server/demo';
 import { isDemoMode, publicUrl } from '$lib/server/env';
@@ -34,6 +35,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (session) {
 			event.locals.sessionToken = token;
 			event.locals.viewer = buildViewer(session.account, session.actingId, getPerson);
+			noteActive(session.account.id);
 		}
 	}
 

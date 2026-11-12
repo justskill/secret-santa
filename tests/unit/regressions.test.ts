@@ -563,7 +563,7 @@ describe('a full redraw with changes', () => {
 describe('the AI budget', () => {
 	it('starts over each season', async () => {
 		const sealed = freshSealedSeason('Budget one');
-		recordUsage(null, 'chat', 'claude-opus-5-5', { input_tokens: 1_000_000, output_tokens: 0 });
+		recordUsage(null, 'chat', 'claude-opus-5-5', { input_tokens: 1_000_000, output_tokens: 0 }, 'end_turn');
 		expect(totalSpend()).toBeGreaterThanOrEqual(4);
 		setSeasonStatus(sealed.id, 'archived');
 		await new Promise((resolve) => setTimeout(resolve, 15));

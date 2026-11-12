@@ -138,7 +138,7 @@ export async function acceptInvite(token: string, password: string): Promise<Per
 
 const WINDOW_MS = 15 * 60_000;
 const MAX_FAILURES = 8;
-const failures = new Map<string, { count: number; first: number }>();
+const failures = new Map<string, { count: number; first: number; turnedAway?: boolean }>();
 
 function throttleKey(ip: string, username: string): string {
 	return `${ip}|${username.trim().toLowerCase()}`;
@@ -152,6 +152,17 @@ export function isThrottled(ip: string, username: string): boolean {
 		return false;
 	}
 	return entry.count >= MAX_FAILURES;
+}
+
+/**
+ * True the first time a throttled sign-in is turned away in a lockout, and false after that. A lockout
+ * is counted once, however many more tries it blocks.
+ */
+export function firstTurnAway(ip: string, username: string): boolean {
+	const entry = failures.get(throttleKey(ip, username));
+	if (!entry || entry.turnedAway) return false;
+	entry.turnedAway = true;
+	return true;
 }
 
 function recordFailure(ip: string, username: string): void {

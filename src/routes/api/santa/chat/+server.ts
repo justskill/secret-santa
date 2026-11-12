@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { requireViewer } from '$lib/server/access';
+import { logAudit } from '$lib/server/audit';
 import { runSantaTurn, type SantaEvent } from '$lib/server/santa/agent';
 import { currentSeason } from '$lib/server/season';
 import type { RequestHandler } from './$types';
@@ -13,8 +14,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!season) throw error(409, 'There is no season running right now.');
 
 	const body = (await request.json().catch(() => ({}))) as { message?: unknown };
-	const message = typeof body.message === 'string' ? body.message.trim().slice(0, MAX_MESSAGE) : '';
+	const full = typeof body.message === 'string' ? body.message.trim() : '';
+	const message = full.slice(0, MAX_MESSAGE);
 	if (!message) throw error(400, 'Say something to Santa first.');
+	// The chat box stops at the same length, so this only counts messages that got past it. Only the length is kept.
+	if (full.length > MAX_MESSAGE) logAudit(viewer.account.id, 'santa.truncated', String(full.length));
 
 	const abort = new AbortController();
 	const encoder = new TextEncoder();
