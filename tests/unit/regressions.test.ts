@@ -21,7 +21,7 @@ import { countArrangements } from '$lib/server/draw/solver';
 import { coveredItemIds, myGifts, peopleWithNoGift, setItemBought } from '$lib/server/gifts';
 import { homeTasks } from '$lib/server/home';
 import { deleteAnnouncement, familyAnnouncements, markAllRead, noticesFor, postNotice, unreadCount, unreadPersonalCount } from '$lib/server/notices';
-import { createHousehold, createPerson, guardiansOf, setGuardians, type Person } from '$lib/server/people';
+import { createHousehold, createPerson, getPerson, guardiansOf, setGuardians, type Person } from '$lib/server/people';
 import { createReminder, fireDueReminders, getReminder, listReminders, planReminders, removeScheduledFor } from '$lib/server/reminders';
 import { isPrivateAddress } from '$lib/server/safefetch';
 import { createAction, decideAction } from '$lib/server/santa/actions';
@@ -485,7 +485,8 @@ describe('mail that needs an answer', () => {
 		askQuestion(sealed.id, buyer, 'A question', 'person');
 		deliverDueMessages();
 		const shown = JSON.stringify(waitingOnMe(sealed.id, subject.id));
-		const buyerPerson = everyone().find((person) => person.id === buyer)!;
+		// Looked up from the database: people added by earlier tests can be in the draw too.
+		const buyerPerson = getPerson(buyer)!;
 		expect(shown).not.toContain(buyerPerson.display_name);
 		expect(shown).not.toContain(giverTag(sealed.id, buyer));
 	});
