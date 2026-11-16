@@ -4,7 +4,8 @@ export const SETTING_DEFAULTS = {
 	family_name: 'Our Family',
 	timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 	santa_enabled: '1',
-	santa_model: 'claude-opus-5-5',
+	// Sonnet matched Opus on the eval's leak and refusal rates at about half the cost (tests/eval).
+	santa_model: 'claude-sonnet-5-5',
 	santa_effort: 'low',
 	santa_web_search: '1',
 	santa_daily_cap: '40',

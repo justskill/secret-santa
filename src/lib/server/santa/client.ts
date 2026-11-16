@@ -17,8 +17,8 @@ const PRICES: Record<string, { input: number; output: number; cacheRead: number;
 const WEB_SEARCH_USD = 0.01;
 
 export const MODEL_CHOICES = [
-	{ id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (best writing, about $4 / $20 per million tokens)' },
-	{ id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (about $2 / $10 per million tokens)' },
+	{ id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (recommended, about $2 / $10 per million tokens)' },
+	{ id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (about $4 / $20 per million tokens)' },
 	{ id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (cheapest, about $0.10 / $0.50 per million tokens)' }
 ] as const;
 
